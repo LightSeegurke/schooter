@@ -93,7 +93,7 @@ function createUser({ username, passwordHash }) {
     role,
     banned: false,
     createdAt: Date.now(),
-    stats: { kills: 0, deaths: 0, wins: 0 }
+    stats: { kills: 0, deaths: 0, wins: 0, xp: 0 }
   };
   data.users.push(user);
   save();
@@ -114,16 +114,23 @@ function nextRoomId() {
   return id;
 }
 
+/** Level curve: each level needs progressively more XP. */
+function levelForXp(xp) {
+  return Math.floor(0.5 + Math.sqrt(1 + (8 * (xp || 0)) / 100) / 2) || 1;
+}
+
 /** Public-safe projection of a user (no password hash). */
 function publicUser(user) {
   if (!user) return null;
+  const stats = Object.assign({ kills: 0, deaths: 0, wins: 0, xp: 0 }, user.stats || {});
+  const kd = stats.deaths > 0 ? +(stats.kills / stats.deaths).toFixed(2) : stats.kills;
   return {
     id: user.id,
     username: user.username,
     role: user.role,
     banned: !!user.banned,
     createdAt: user.createdAt,
-    stats: user.stats || { kills: 0, deaths: 0, wins: 0 }
+    stats: Object.assign(stats, { level: levelForXp(stats.xp), kd })
   };
 }
 

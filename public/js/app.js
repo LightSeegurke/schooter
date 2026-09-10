@@ -10,6 +10,19 @@
   let authMode = 'login';
   let currentMeta = null;   // meta of the room we're in
   let myRoomRole = null;
+  let CONFIG = { maps: [], weapons: {}, weaponOrder: [] };
+
+  async function loadConfig() {
+    try {
+      const res = await fetch(API + '/api/config');
+      CONFIG = await res.json();
+    } catch (e) { /* non-fatal */ }
+    const sel = $('new-room-map');
+    if (sel) {
+      sel.innerHTML = '<option value="">Zufällige Karte</option>' +
+        CONFIG.maps.map((m) => '<option value="' + m.id + '">' + escapeHtml(m.name) + '</option>').join('');
+    }
+  }
 
   // ---------------- Screen helpers ----------------
   function show(screen) {
@@ -98,6 +111,9 @@
       if (d.type === 'shot') SchooterGame.addFlash(d.x, d.y, '#ffcc55');
     });
     socket.on('chat:msg', addChat);
+    socket.on('killfeed', addKillfeed);
+    socket.on('match:end', showMatchEnd);
+    socket.on('match:start', () => { $('match-overlay').classList.add('hidden'); });
     socket.on('room:state:meta', (meta) => { currentMeta = meta; renderManage(); updateManageBtn(); });
     socket.on('room:kicked', (d) => { toast(d.banned ? 'Du wurdest verbannt.' : 'Du wurdest gekickt.'); backToLobby(); });
     socket.on('room:closed', () => { toast('Der Raum wurde geschlossen.'); backToLobby(); });
@@ -124,9 +140,11 @@
     rooms.forEach((r) => {
       const div = document.createElement('div');
       div.className = 'room-card';
+      const modeLabel = r.mode === 'tdm' ? 'Team' : 'FFA';
       div.innerHTML =
         '<div><div class="rc-name">' + escapeHtml(r.name) + '</div>' +
-        '<div class="rc-sub">von ' + escapeHtml(r.ownerName) + '</div></div>' +
+        '<div class="rc-sub">von ' + escapeHtml(r.ownerName) + ' · ' + modeLabel +
+        (r.bots ? ' · ' + r.bots + ' Bots' : '') + '</div></div>' +
         '<div class="spacer"></div>' +
         '<span class="badge">' + r.players + '/' + r.maxPlayers + '</span>' +
         '<button class="btn small primary">Beitreten</button>';
@@ -139,7 +157,10 @@
     const name = $('new-room-name').value.trim() || (me.username + 's Raum');
     const visibility = $('new-room-private').checked ? 'private' : 'public';
     const maxPlayers = parseInt($('new-room-max').value, 10) || 8;
-    socket.emit('room:create', { name, visibility, maxPlayers }, onJoined);
+    const mode = $('new-room-mode').value;
+    const mapId = $('new-room-map').value;
+    const killLimit = parseInt($('new-room-kills').value, 10) || 25;
+    socket.emit('room:create', { name, visibility, maxPlayers, mode, mapId, killLimit }, onJoined);
   });
 
   $('btn-join-code').addEventListener('click', () => {
@@ -165,13 +186,33 @@
     show('game');
     $('hud-roomname').textContent = currentMeta.name;
     $('chat-log').innerHTML = '';
-    SchooterGame.start($('canvas'), {
+    $('killfeed').innerHTML = '';
+    $('match-overlay').classList.add('hidden');
+    buildWeaponBar(res.weaponOrder || CONFIG.weaponOrder, res.weapons || CONFIG.weapons);
+    SchooterGame.start($('canvas'), $('minimap'), {
       world: res.world,
+      obstacles: res.obstacles || [],
+      mode: res.mode || 'ffa',
+      weaponOrder: res.weaponOrder || CONFIG.weaponOrder,
       mySid: socket.id,
-      onInput: (input) => socket.emit('input', input)
+      onInput: (input) => socket.emit('input', input),
+      onAct: (a) => socket.emit('act', a)
     });
     SchooterGame.setMySid(socket.id);
     updateManageBtn();
+  }
+
+  function buildWeaponBar(order, weapons) {
+    const bar = $('hud-weaponbar');
+    bar.innerHTML = '';
+    (order || []).forEach((key, i) => {
+      const w = (weapons && weapons[key]) || {};
+      const slot = document.createElement('div');
+      slot.className = 'wslot'; slot.dataset.weapon = key;
+      slot.innerHTML = '<span class="k">' + (i + 1) + '</span>' + escapeHtml((w.name || key).slice(0, 6));
+      slot.onclick = () => socket.emit('act', { a: 'switch', w: key });
+      bar.appendChild(slot);
+    });
   }
 
   function backToLobby() {
@@ -202,10 +243,63 @@
       const pct = Math.max(0, me2.hp);
       $('hud-hp').querySelector('.hp-fill').style.width = pct + '%';
       $('hud-hp').querySelector('.hp-text').textContent = 'HP ' + pct;
-      const wn = { pistol: '🔫 Pistole', rifle: '🔫 Gewehr', shotgun: '🔫 Schrotflinte' }[me2.weapon] || me2.weapon;
-      $('hud-weapon').textContent = wn;
+      const shieldEl = $('hud-shield');
+      shieldEl.classList.toggle('hidden', !me2.shield);
+      if (me2.shield) shieldEl.querySelector('.shield-fill').style.width = me2.shield + '%';
+      // ammo
+      const ammoTxt = me2.mag < 0 ? '∞' : (me2.reloading ? 'NACHLADEN' : me2.mag + ' / ' + (me2.reserve < 0 ? '∞' : me2.reserve));
+      $('hud-ammo').textContent = '🔫 ' + ammoTxt;
+      $('hud-nade').textContent = '💣 ' + me2.grenades;
+      // weapon bar highlight
+      document.querySelectorAll('.wslot').forEach((el) =>
+        el.classList.toggle('active', el.dataset.weapon === me2.weapon));
       $('respawn-overlay').classList.toggle('hidden', me2.alive);
     }
+    // match bar
+    const m = s.match || {};
+    const bar = $('hud-matchbar');
+    const secs = Math.ceil((m.timeLeft || 0) / 1000);
+    const time = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+    if (m.mode === 'tdm') {
+      bar.innerHTML = '<span class="score-red">🔴 ' + (m.scores ? m.scores.red : 0) + '</span>' +
+        '<span class="timer">' + time + '</span>' +
+        '<span class="score-blue">' + (m.scores ? m.scores.blue : 0) + ' 🔵</span>' +
+        '<span class="timer">Ziel ' + m.killLimit + '</span>';
+    } else {
+      const lead = sorted[0];
+      bar.innerHTML = '<span>👑 ' + (lead ? escapeHtml(lead.name) + ' (' + lead.kills + ')' : '—') + '</span>' +
+        '<span class="timer">' + time + '</span><span class="timer">Ziel ' + m.killLimit + '</span>';
+    }
+  }
+
+  function addKillfeed(k) {
+    const feed = $('killfeed');
+    const div = document.createElement('div');
+    div.className = 'kf';
+    const wn = k.weapon ? (CONFIG.weapons[k.weapon] || {}).name || k.weapon : '';
+    div.innerHTML = '<span class="kf-k">' + escapeHtml(k.killer) + '</span>' +
+      '<span class="kf-w">' + escapeHtml(wn) + ' ☠</span>' +
+      '<span>' + escapeHtml(k.victim) + '</span>';
+    feed.appendChild(div);
+    while (feed.children.length > 5) feed.removeChild(feed.firstChild);
+    setTimeout(() => div.remove(), 5000);
+  }
+
+  function showMatchEnd(result) {
+    const overlay = $('match-overlay');
+    let title;
+    if (result.mode === 'tdm') {
+      title = result.winner === 'red' ? '🔴 Team Rot gewinnt!' : '🔵 Team Blau gewinnt!';
+    } else {
+      title = result.winner ? '👑 ' + result.winner.name + ' gewinnt!' : 'Runde beendet';
+    }
+    $('match-title').textContent = title;
+    $('match-board').innerHTML = result.board.slice(0, 8).map((r, i) =>
+      '<div class="mb-row"><span class="mb-rank">' + (i + 1) + '.</span>' +
+      '<span>' + escapeHtml(r.name) + '</span><div class="spacer"></div>' +
+      '<span>' + r.kills + ' K / ' + r.deaths + ' T</span></div>').join('');
+    $('match-reset').textContent = 'Neue Runde in Kürze…';
+    overlay.classList.remove('hidden');
   }
 
   // ---------------- Chat ----------------
@@ -249,6 +343,7 @@
     $('mg-name').value = currentMeta.name;
     $('mg-private').checked = currentMeta.visibility === 'private';
     $('mg-code').textContent = currentMeta.joinCode;
+    $('mg-mode').textContent = currentMeta.mode === 'tdm' ? 'Team-Deathmatch' : 'Jeder gegen jeden';
     const wrap = $('mg-players');
     wrap.innerHTML = '';
     currentMeta.players.forEach((p) => {
@@ -306,6 +401,28 @@
       socket.emit('room:close', {}, (res) => { if (res && res.error) toast(res.error); });
     }
   });
+  $('mg-addbot').addEventListener('click', () => socket.emit('room:addBot', {}, ack));
+  $('mg-rmbot').addEventListener('click', () => socket.emit('room:removeBot', {}, ack));
+
+  // ---------------- Leaderboard ----------------
+  $('btn-leaderboard').addEventListener('click', async () => {
+    $('lb-modal').classList.remove('hidden');
+    $('lb-list').innerHTML = '<div class="empty">Lädt…</div>';
+    try {
+      const res = await fetch(API + '/api/leaderboard', { headers: { Authorization: 'Bearer ' + token } });
+      const data = await res.json();
+      if (!data.leaderboard.length) { $('lb-list').innerHTML = '<div class="empty">Noch keine Statistiken.</div>'; return; }
+      $('lb-list').innerHTML = data.leaderboard.map((u, i) =>
+        '<div class="at-row"><span class="mb-rank">' + (i + 1) + '.</span>' +
+        '<b>' + escapeHtml(u.username) + '</b>' +
+        '<span class="badge">Lvl ' + u.stats.level + '</span>' +
+        (u.role === 'admin' ? ' <span class="badge">ADMIN</span>' : '') +
+        '<div class="spacer"></div>' +
+        '<span class="muted">' + u.stats.kills + ' Kills · ' + u.stats.wins + ' Siege · K/D ' + u.stats.kd + '</span></div>'
+      ).join('');
+    } catch (e) { $('lb-list').innerHTML = '<div class="empty">Fehler beim Laden.</div>'; }
+  });
+  $('lb-dismiss').addEventListener('click', () => $('lb-modal').classList.add('hidden'));
 
   // ---------------- Admin panel ----------------
   $('btn-admin').addEventListener('click', openAdmin);
@@ -405,5 +522,6 @@
   }
 
   // ---------------- Boot ----------------
+  loadConfig();
   tryResume();
 })();

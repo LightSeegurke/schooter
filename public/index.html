@@ -32,6 +32,7 @@
       <span class="logo small">🔫 SCHOOTER</span>
       <div class="spacer"></div>
       <span id="lobby-user" class="userbadge"></span>
+      <button id="btn-leaderboard" class="btn ghost">🏆 Rangliste</button>
       <button id="btn-admin" class="btn ghost hidden">Adminpanel</button>
       <button id="btn-logout" class="btn ghost">Abmelden</button>
     </header>
@@ -48,9 +49,23 @@
       <div class="panel sidepanel">
         <h2>Raum erstellen</h2>
         <input id="new-room-name" type="text" placeholder="Raumname" maxlength="30" />
-        <label class="field">Max. Spieler
-          <input id="new-room-max" type="number" min="2" max="16" value="8" />
+        <label class="field">Spielmodus
+          <select id="new-room-mode">
+            <option value="ffa">Jeder gegen jeden</option>
+            <option value="tdm">Team-Deathmatch</option>
+          </select>
         </label>
+        <label class="field">Karte
+          <select id="new-room-map"></select>
+        </label>
+        <div class="row2">
+          <label class="field">Max. Spieler
+            <input id="new-room-max" type="number" min="2" max="16" value="8" />
+          </label>
+          <label class="field">Kill-Limit
+            <input id="new-room-kills" type="number" min="5" max="200" value="25" />
+          </label>
+        </div>
         <label class="check">
           <input id="new-room-private" type="checkbox" />
           Privat (einladungspflichtig, nicht gelistet)
@@ -75,14 +90,23 @@
         <button id="btn-leave" class="btn ghost small">← Verlassen</button>
         <span id="hud-roomname" class="hud-room"></span>
         <button id="btn-manage" class="btn ghost small hidden">⚙ Verwalten</button>
+        <div class="spacer"></div>
+        <div id="hud-matchbar" class="matchbar"></div>
       </div>
 
       <div class="hud-scoreboard" id="scoreboard"></div>
+      <div class="hud-killfeed" id="killfeed"></div>
+      <canvas id="minimap" class="minimap" width="220" height="124"></canvas>
 
       <div class="hud-bottom">
         <div id="hud-hp" class="hp-bar"><div class="hp-fill"></div><span class="hp-text"></span></div>
-        <div id="hud-weapon" class="weapon-tag"></div>
+        <div id="hud-shield" class="shield-bar hidden"><div class="shield-fill"></div></div>
+        <div id="hud-ammo" class="ammo-tag"></div>
+        <div id="hud-nade" class="nade-tag"></div>
+        <div id="hud-weaponbar" class="weaponbar"></div>
       </div>
+
+      <div class="controls-hint">WASD bewegen · Maus zielen · Klick schießen · 1-7 Waffe · Q/Rad wechseln · R nachladen · G Granate · Shift Dash</div>
 
       <!-- Chat -->
       <div class="chat">
@@ -93,6 +117,14 @@
       </div>
 
       <div id="respawn-overlay" class="respawn hidden">Ausgeschaltet – Respawn…</div>
+
+      <div id="match-overlay" class="match-overlay hidden">
+        <div class="match-card">
+          <h1 id="match-title"></h1>
+          <div id="match-board" class="match-board"></div>
+          <p id="match-reset" class="muted"></p>
+        </div>
+      </div>
     </div>
 
     <!-- Manage room modal -->
@@ -106,7 +138,13 @@
           <label class="check"><input id="mg-private" type="checkbox" /> Privat</label>
           <button id="mg-save" class="btn small">Speichern</button>
         </div>
-        <p class="code-line">Beitrittscode: <b id="mg-code"></b></p>
+        <p class="code-line">Beitrittscode: <b id="mg-code"></b> · Modus: <b id="mg-mode"></b></p>
+
+        <h3>Bots</h3>
+        <div class="mrow">
+          <button id="mg-addbot" class="btn small">🤖 Bot hinzufügen</button>
+          <button id="mg-rmbot" class="btn small">Bot entfernen</button>
+        </div>
 
         <h3>Spieler</h3>
         <div id="mg-players" class="mg-players"></div>
@@ -146,6 +184,14 @@
       </div>
     </div>
   </section>
+
+  <div id="lb-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>🏆 Globale Rangliste</h2>
+      <div id="lb-list" class="admin-table"></div>
+      <div class="mrow end"><button id="lb-dismiss" class="btn ghost small">Schließen</button></div>
+    </div>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
 

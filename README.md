@@ -13,10 +13,19 @@ Ein browserbasierter **Multiplayer-Top-Down-Shooter** mit Accounts, Räumen, Adm
   - **Eigentümer & Moderatoren** verwalten Räume (kicken, bannen, einladen, umbenennen, öffentlich/privat schalten)
   - Nur der Eigentümer (oder ein Admin) kann Moderatoren ernennen und den Raum schließen
 - **Echtzeit-Shooter** – server-autoritative Bewegung, Schüsse und Schadensberechnung bei 30 Ticks/s
-  - WASD/Pfeile bewegen, Maus zielen, Klick/Leertaste schießen
-  - 3 Waffen: Pistole, Gewehr, Schrotflinte (per Powerup)
-  - Powerups (Heilung + Waffen), Hindernisse, Respawn, Scoreboard, Kill-Feed
-  - In-Game-Chat pro Raum
+- **Spielmodi**: Jeder-gegen-jeden (FFA) und Team-Deathmatch (Rot vs. Blau, kein Friendly Fire)
+- **Match-System**: Kill-Limit + Zeitlimit, Siegbildschirm mit Rangliste, automatischer Neustart der Runde
+- **3 Karten**: Arena, Bunker, Säulen – bei der Raumerstellung wählbar (oder zufällig)
+- **7 Waffen** mit Munition, Magazin und Nachladen: Messer (Nahkampf), Pistole, MP, Gewehr,
+  Schrotflinte, Scharfschützengewehr und Raketenwerfer (mit Flächenschaden)
+- **Granaten** (werfbar, Flächenschaden) und **Dash/Ausweichen**
+- **Powerups**: Heilung, Schild, Schadensboost, Tempoboost, Munition
+- **KI-Bots** – Eigentümer/Moderatoren können Bots hinzufügen/entfernen (mit Sichtlinien-KI,
+  die Hindernisse umläuft); ideal zum Testen oder Auffüllen von Räumen
+- **Fortschritt**: persistente Statistiken, XP & Level, **globale Rangliste**
+- **Hindernisse, Respawn, Scoreboard, Kill-Feed, Killstreak-Ansagen**
+- **Minimap**, Partikel-Effekte, Screen-Shake und synthetisierte Soundeffekte (Web Audio, ohne Asset-Dateien)
+- **In-Game-Chat** pro Raum
 
 ## Schnellstart
 
@@ -31,12 +40,17 @@ Zum Testen mehrerer Spieler einfach mehrere Browser-Tabs / -Fenster (oder Gerät
 
 ## Steuerung
 
-| Taste            | Aktion            |
-|------------------|-------------------|
-| W A S D / Pfeile | Bewegen           |
-| Maus             | Zielen            |
-| Linksklick / Leertaste | Schießen    |
-| Enter            | Chat fokussieren  |
+| Taste                  | Aktion                         |
+|------------------------|--------------------------------|
+| W A S D / Pfeile       | Bewegen                        |
+| Maus                   | Zielen                         |
+| Linksklick / Leertaste | Schießen                       |
+| 1 – 7                  | Waffe direkt wählen            |
+| Q / Mausrad            | Waffe durchwechseln            |
+| R                      | Nachladen                      |
+| G                      | Granate werfen                 |
+| Shift                  | Dash / Ausweichen              |
+| Enter                  | Chat                           |
 
 ## Konfiguration
 
@@ -57,8 +71,9 @@ Zum Testen mehrerer Spieler einfach mehrere Browser-Tabs / -Fenster (oder Gerät
 server/
   index.js   REST-API + Socket.IO-Handler
   auth.js    Registrierung, Login, JWT, Middleware
-  db.js      JSON-Persistenz (Nutzer, IDs)
-  game.js    Räume, Physik, Waffen, Game-Loop
+  db.js      JSON-Persistenz (Nutzer, Stats, XP/Level)
+  game.js    Räume, Physik, Waffen, Bots, Modi, Match-System, Game-Loop
+  maps.js    Kartendefinitionen (Hindernisse, Spawns, Powerups)
 public/
   index.html Screens: Auth, Lobby, Game, Admin
   js/app.js  Client-Logik & Socket-Verdrahtung

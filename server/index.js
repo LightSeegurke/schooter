@@ -82,6 +82,19 @@ app.post('/api/admin/rooms/:id/close', auth.requireAuth, auth.requireAdmin, (req
   res.json({ ok: true });
 });
 
+app.get('/api/leaderboard', auth.requireAuth, (req, res) => {
+  const top = db.getUsers()
+    .filter((u) => !u.banned)
+    .map(db.publicUser)
+    .sort((a, b) => (b.stats.kills - a.stats.kills) || (b.stats.wins - a.stats.wins))
+    .slice(0, 15);
+  res.json({ leaderboard: top });
+});
+
+app.get('/api/config', (req, res) => {
+  res.json({ maps: game.MAPS, weapons: game.WEAPONS, weaponOrder: game.WEAPON_ORDER });
+});
+
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // ---- Socket.IO --------------------------------------------------------------
@@ -116,7 +129,10 @@ io.on('connection', (socket) => {
       owner: user,
       name: data && data.name,
       visibility: data && data.visibility,
-      maxPlayers: data && data.maxPlayers
+      maxPlayers: data && data.maxPlayers,
+      mode: data && data.mode,
+      mapId: data && data.mapId,
+      killLimit: data && data.killLimit
     });
     joinRoom(socket, room, cb);
   });
@@ -156,6 +172,37 @@ io.on('connection', (socket) => {
     player.input.fire = !!input.fire;
     if (typeof input.angle === 'number') player.input.angle = input.angle;
   });
+
+  // Discrete in-game actions (weapon switch / reload / grenade / dash).
+  socket.on('act', (data) => {
+    const roomId = game.socketToRoom.get(socket.id);
+    if (roomId == null) return;
+    const room = game.getRoom(roomId);
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player || !player.alive || !data) return;
+    if (data.a === 'switch' && game.WEAPON_ORDER.includes(data.w)) {
+      player.weapon = data.w;
+      player.reloadUntil = 0;
+    } else if (data.a === 'reload') {
+      game.startReload(player);
+    } else if (data.a === 'grenade') {
+      game.throwGrenade(room, player);
+    } else if (data.a === 'dash') {
+      game.dash(room, player);
+    }
+  });
+
+  socket.on('room:addBot', (data, cb) => withManagedRoom(socket, cb, (room) => {
+    if ([...room.players.values()].length >= 16) return cb && cb({ error: 'Raum ist voll (max. 16).' });
+    game.addBot(room);
+    cb && cb({ ok: true });
+  }));
+
+  socket.on('room:removeBot', (data, cb) => withManagedRoom(socket, cb, (room) => {
+    if (!game.removeBot(room)) return cb && cb({ error: 'Keine Bots im Raum.' });
+    cb && cb({ ok: true });
+  }));
 
   socket.on('chat:send', (msg) => {
     const roomId = game.socketToRoom.get(socket.id);
@@ -252,7 +299,10 @@ io.on('connection', (socket) => {
       meta: game.roomMeta(room),
       you: { userId: user.id, role: user.role },
       weapons: game.WEAPONS,
-      world: game.WORLD
+      weaponOrder: game.WEAPON_ORDER,
+      world: game.WORLD,
+      obstacles: room.obstacles,
+      mode: room.mode
     });
   }
 });
